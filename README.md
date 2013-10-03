@@ -12,4 +12,4 @@ The app needs the following libraries, which you can install using pip:
 
 **Requests:** http://docs.python-requests.org/en/latest/
 
-**Requests-oauth:** https://github.com/maraujop/requests-oauth
+**Rauth:** https://github.com/litl/rauth
