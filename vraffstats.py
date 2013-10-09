@@ -45,7 +45,7 @@ resp = yhandler.api_req(leaguesQuery)
 
 resp = yhandler.api_req(standingsQuery)
 
-#print resp.text
+print resp.text
 
 print 'Extracting scoreboard standings data from XML...'
 
