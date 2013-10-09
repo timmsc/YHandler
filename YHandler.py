@@ -1,22 +1,16 @@
 import requests
-#import rauth
 from rauth import OAuth1Service
-#from serializer import deserialize_session, serialize_session
-#from oauth_hook import OAuthHook
 from requests import request
-from urlparse import parse_qs
-#from xml.dom import minidom
 import webbrowser
 import csv
+import os.path
 
 GET_TOKEN_URL = 'https://api.login.yahoo.com/oauth/v2/get_token'
 AUTHORIZATION_URL = 'https://api.login.yahoo.com/oauth/v2/request_auth'
 REQUEST_TOKEN_URL = 'https://api.login.yahoo.com/oauth/v2/get_request_token'
 CALLBACK_URL = 'oob'
 
-#request_token_url = "https://api.login.yahoo.com/oauth/v2/get_request_token"
-#authorize_url = 'https://api.login.yahoo.com/oauth/v2/request_auth'
-#access_token_url = 'https://api.login.yahoo.com/oauth/v2/get_token'
+sessionf = 'yahoo_session.txt'
 
 class YHandler(object):
 
@@ -24,6 +18,15 @@ class YHandler(object):
 		self.authf = authf
 		self.authd = self.get_authvals_csv(self.authf)
 		self.session = None
+		# Get a real consumer key & secret
+		self.yahoo = OAuth1Service(
+			name='yahoo',
+			consumer_key=self.authd['consumer_key'],
+			consumer_secret=self.authd['consumer_secret'],
+			request_token_url=REQUEST_TOKEN_URL,
+			access_token_url=GET_TOKEN_URL,
+			authorize_url=AUTHORIZATION_URL,
+			base_url='https://api.login.yahoo.com/oauth/v2/')
 
 	def get_authvals_csv(self, authf):
 		vals = {}	#dict of vals to be returned
@@ -42,84 +45,36 @@ class YHandler(object):
 		f_iter.writerow(authd)
 		f.close
 
-	def reg_user(self):
-		
-		init_oauth_hook = OAuth1Service( consumer_key=self.authd['consumer_key'], consumer_secret=self.authd['consumer_secret'], name='yahoo', access_token_url=GET_TOKEN_URL, authorize_url=AUTHORIZATION_URL, request_token_url=REQUEST_TOKEN_URL, base_url='https://api.login.yahoo.com/oauth/v2/')
-		request_token, request_token_secret = init_oauth_hook.get_request_token(data = { 'oauth_callback': CALLBACK_URL })
-		#print "Request Token:"
-		#print " - oauth_token = %s" % request_token
-		#print " - oauth_token_secret = %s" % request_token_secret
-		#print
-		auth_url = init_oauth_hook.get_authorize_url(request_token)
+	def new_session(self):
+		request_token, request_token_secret = self.yahoo.get_request_token(data = { 'oauth_callback': CALLBACK_URL })
+		auth_url = self.yahoo.get_authorize_url(request_token)
 		print 'Visit this URL in your browser: ' + auth_url
 		pin = raw_input('Enter PIN from browser: ')
-		self.session = init_oauth_hook.get_auth_session(request_token, request_token_secret, method='POST', data={'oauth_verifier': pin})
-		#self.get_login_token()
-		return self.session
+		session = self.yahoo.get_auth_session(request_token, request_token_secret, method='POST', data={'oauth_verifier': pin})
+		f = open(sessionf, 'wb')
+		f.write(session.access_token + '\n')
+		f.write(session.access_token_secret + '\n')
+		return session
 
-	def get_login_token(self):
-		oauth_hook = OAuthHook(self.authd['oauth_token'], self.authd['oauth_token_secret'], self.authd['consumer_key'], self.authd['consumer_secret'])
-		response = requests.post(GET_TOKEN_URL, {'oauth_verifier': self.authd['oauth_verifier']}, hooks={'pre_request': oauth_hook})
-		qs = parse_qs(response.content)
-		self.authd.update(map(lambda d: (d[0], (d[1][0])), qs.items()))
-		self.write_authvals_csv(self.authd, self.authf)
-		return response
-
-	def refresh_token(self):
-                oauth_hook = OAuth1Service( consumer_key=self.authd['consumer_key'], consumer_secret=self.authd['consumer_secret'], name='yahoo', access_token_url=GET_TOKEN_URL, authorize_url=AUTHORIZATION_URL, request_token_url=REQUEST_TOKEN_URL, base_url='https://api.login.yahoo.com/oauth/v2/')
-                request_token, request_token_secret = init_oauth_hook.get_request_token(data = { 'oauth_callback': CALLBACK_URL })
-                #print "Request Token:"
-                #print " - oauth_token = %s" % request_token
-                #print " - oauth_token_secret = %s" % request_token_secret
-                #print
-                auth_url = init_oauth_hook.get_authorize_url(request_token)
-                print 'Visit this URL in your browser: ' + auth_url
-                pin = raw_input('Enter PIN from browser: ')
-                self.session = init_oauth_hook.get_auth_session(request_token, request_token_secret, method='POST', data={'oauth_verifier': pin})
-########
-
-
-		oauth_hook = OAuthHook(access_token=self.authd['oauth_token'], access_token_secret=self.authd['oauth_token_secret'], consumer_key=self.authd['consumer_key'], consumer_secret=self.authd['consumer_secret'])
-		response = requests.post(GET_TOKEN_URL, {'oauth_session_handle': self.authd['oauth_session_handle']}, hooks={'pre_request': oauth_hook})
-		qs = parse_qs(response.content)
-		self.authd.update(map(lambda d: (d[0], (d[1][0])), qs.items()))
-		self.write_authvals_csv(self.authd, self.authf)
-
-
-	def call_api(self, url, req_meth='GET', data=None, headers=None):
-		req_oauth_hook = OAuthHook(self.authd['oauth_token'], self.authd['oauth_token_secret'], self.authd['consumer_key'], self.authd['consumer_secret'], header_auth=True)
-		client = requests.session(hooks={'pre_request':req_oauth_hook})
-		return client.request(method=req_meth, url=url, data=data, headers=headers)
-
-	def getText(self, nodelist):
-		rc = []
-		for node in nodelist:
-			if node.nodeType == node.TEXT_NODE:
-				rc.append(node.data)
-		return ''.join(rc)
+	def reuse_session(self):
+		f = open(sessionf, 'rb')
+                access_token = f.readline().rstrip('\n')
+                access_token_secret = f.readline().rstrip('\n')
+		print 'access_token: ' + access_token
+		print 'access_token_secret: ' + access_token_secret
+		session = self.yahoo.get_session((access_token, access_token_secret))
+		return session
 
 	def api_req(self, querystring, req_meth='GET', data=None, headers=None):
-		#print "In api_req..."
 		base_url = 'http://fantasysports.yahooapis.com/fantasy/v2/'
 		url = base_url + querystring
-		#if ('oauth_token' not in self.authd) or ('oauth_token_secret' not in self.authd) or (not (self.authd['oauth_token'] and self.authd['oauth_token_secret'])):
 		if (self.session is None):
-			self.reg_user()
-		#query = self.call_api(url, req_meth, data=data, headers=headers)
-#		r=self.session.get('http://fantasysports.yahooapis.com/fantasy/v2/users;use_login=1/games;game_keys=314/leagues');
-#		print r.text
+			if (os.path.exists(sessionf)):
+				self.session = self.reuse_session()
+			else:
+				self.session = self.new_session()
 		print "calling url: ", url
 		r=self.session.get(url)
-#		if query.status_code != 200: #We have both authtokens but are being rejected. Assume token expired. This could be a LOT more robust
-#			self.refresh_token()
-#			query = self.call_api(url, req_meth, data=data, headers=headers)
-#		xmldoc = minidom.parseString(r.text)
-#		for matchup in xmldoc.getElementsByTagName('matchup'):  # visit every node <matchup />
-#			teamName1 = self.getText(matchup.getElementsByTagName("name")[0].childNodes)
-#			teamName2 = self.getText(matchup.getElementsByTagName("name")[1].childNodes)
-#			score1 = self.getText(matchup.getElementsByTagName("team_points"[0]).getElementsByTagName("total"[0]).childNodes)
-#			score2 = self.getText(matchup.getElementsByTagName("team_points"[1]).getElementsByTagName("total"[0]).childNodes)
-#			print teamName1, " => ", score1, " vs. ", teamName2, " => ", score2
 	
 		return r
 
