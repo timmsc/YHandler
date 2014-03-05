@@ -1,12 +1,10 @@
 import requests
 from rauth import OAuth1Service
 from requests import request
-from rauth.utils import parse_utf8_qsl
 import webbrowser
 import csv
 import os.path
 import pickle as pk
-import rauth.service as serv
 
 GET_TOKEN_URL = 'https://api.login.yahoo.com/oauth/v2/get_token'
 AUTHORIZATION_URL = 'https://api.login.yahoo.com/oauth/v2/request_auth'
@@ -66,28 +64,13 @@ class YHandler(object):
 		auth_url = self.yahoo.get_authorize_url(request_token)
 		print 'Visit this URL in your browser: ' + auth_url
 		pin = raw_input('Enter PIN from browser: ')
-               # same as OAuth1Service.get_auth_session, but also returns oauth_session_handle which is need by Yahoo's OAuth to refresh the access token
-                r = self.yahoo.get_raw_access_token(request_token,
-                                                    request_token_secret,
-                                                    method='POST',
-                                                    data={'oauth_verifier': pin})
-
-                access_token, access_token_secret, session_handle = \
-                        serv.process_token_request(r, parse_utf8_qsl, 'oauth_token', 'oauth_token_secret', 'oauth_session_handle')
-
-
+		# need to get &oauth_session_handle=AKVdNElJthnrHDwnYDuj6fJ2ayRbJvkePz9AKwi9dQAfb4bd here; not sure how.  This is need in refresh call to reuse session after it has expired.
+		session = self.yahoo.get_auth_session(request_token, request_token_secret, method='POST', data={'oauth_verifier': pin})
 		f = open(sessionf, 'wb')
-		f.write(access_token + '\n')
-		f.write(access_token_secret + '\n')
-		f.write(session_handle + '\n')
-		session = self.yahoo.get_session((access_token, access_token_secret))
-		if self.yahoo.request_token_response:
-            		session.request_token_response = self.yahoo.request_token_response
-        	if self.yahoo.access_token_response:
-           		session.access_token_response = self.yahoo.access_token_response
-
+		f.write(session.access_token + '\n')
+		f.write(session.access_token_secret + '\n')
 		self.serialize_session(session)
-                return session
+		return session
 
 	def reuse_session(self):
 		f = open(sessionf, 'rb')
@@ -95,38 +78,9 @@ class YHandler(object):
                 access_token_secret = f.readline().rstrip('\n')
 		print 'access_token: ' + access_token
 		print 'access_token_secret: ' + access_token_secret
+		#print 'self.yahoo.signature_obj: ' + self.yahoo.signature_obj
 		session = self.yahoo.get_session((access_token, access_token_secret), self.yahoo.signature_obj)
 		return session
-
-	def refresh_session(self):
-                f = open(sessionf, 'rb')
-                access_token = f.readline().rstrip('\n')
-                access_token_secret = f.readline().rstrip('\n')
-		session_handle = f.readline().rstrip('\n')
-                print 'access_token: ' + access_token
-                print 'access_token_secret: ' + access_token_secret
-                print 'session_handle: ' + session_handle
-                r = self.yahoo.get_raw_access_token(request_token,
-                                                    request_token_secret,
-						    data={'session_handle': session_handle})		    
-	        access_token, access_token_secret, session_handle = \
-                        serv.process_token_request(r, parse_utf8_qsl, 'oauth_token', 'oauth_token_secret', 'oauth_session_handle')
-
-
-                f = open(sessionf, 'wb')
-                f.write(access_token + '\n')
-                f.write(access_token_secret + '\n')
-                f.write(session_handle + '\n')
-                session = yahoo.get_session((access_token, access_token_secret))
-                if self.yahoo.request_token_response:
-                        session.request_token_response = self.yahoo.request_token_response
-                if self.yahoo.access_token_response:
-                        session.access_token_response = self.yahoo.access_token_response
-
-                self.serialize_session(session)
-                return session
-
-	
 
 	def api_req(self, querystring, req_meth='GET', data=None, headers=None):
 		base_url = 'http://fantasysports.yahooapis.com/fantasy/v2/'
@@ -137,10 +91,7 @@ class YHandler(object):
 			self.session = self.reuse_session()
 		print "calling url: ", url
 		r=self.session.get(url)
-		if (r.status_code != 200):
-			print "Got status code: " + r.status_code
-			self.refresh_session()
-			r=self.session.get(url)	
+	
 		return r
 
 	
